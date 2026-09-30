@@ -90,6 +90,7 @@ jobs:
 
       # A wrong GPG_PASSPHRASE otherwise surfaces as a cryptic maven-gpg-plugin
       # error halfway through the upload, so sign a throwaway file first.
+      # The plugin itself gets --pinentry-mode loopback from the POM.
       - name: Check the signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -119,7 +120,6 @@ jobs:
 
           mvn -B --no-transfer-progress -Prelease \
             -Dgpg.passphrase="${GPG_PASSPHRASE}" \
-            -Dgpg.pinentry-mode=loopback \
             deploy
 
       - name: Create the GitHub release

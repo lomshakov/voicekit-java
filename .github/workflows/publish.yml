@@ -85,6 +85,25 @@ jobs:
 
           printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
 
+          echo "Imported signing keys:"
+          gpg --list-secret-keys --keyid-format=long
+
+      # A wrong GPG_PASSPHRASE otherwise surfaces as a cryptic maven-gpg-plugin
+      # error halfway through the upload, so sign a throwaway file first.
+      - name: Check the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "${GPG_PRIVATE_KEY}" ]; then
+            exit 0
+          fi
+
+          echo "VoiceKit" > "$RUNNER_TEMP/probe.txt"
+          gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
+            --armor --detach-sign --output "$RUNNER_TEMP/probe.txt.asc" "$RUNNER_TEMP/probe.txt"
+          gpg --verify "$RUNNER_TEMP/probe.txt.asc" "$RUNNER_TEMP/probe.txt"
+
       - name: Publish
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -100,6 +119,7 @@ jobs:
 
           mvn -B --no-transfer-progress -Prelease \
             -Dgpg.passphrase="${GPG_PASSPHRASE}" \
+            -Dgpg.pinentry-mode=loopback \
             deploy
 
       - name: Create the GitHub release

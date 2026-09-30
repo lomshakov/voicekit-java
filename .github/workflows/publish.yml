@@ -1,0 +1,109 @@
+name: Publish to Maven Central
+
+# Release flow (same as the other VoiceKit SDKs):
+#   1. bump the version in pom.xml and VoiceKitClient.VERSION;
+#   2. commit, then `git tag vX.Y.Z && git push --tags`.
+#
+# The workflow signs the artifacts and uploads them to the Sonatype Central
+# Portal, which publishes them to Maven Central. The very first upload also
+# verifies the `io.github.lomshakov` namespace against the GitHub account.
+#
+# It can also be started by hand (Actions -> Publish to Maven Central -> Run
+# workflow); the tag-specific steps are skipped in that case.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Validate the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! printf '%s' "${GITHUB_REF_NAME}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Tag ${GITHUB_REF_NAME} is not a semver version (expected vX.Y.Z)."
+            exit 1
+          fi
+
+      - name: Check that the tag matches the pom version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          pom_version="$(mvn -B --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          if [ "v${pom_version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match the pom version ${pom_version}."
+            exit 1
+          fi
+
+      - name: Configure the Maven release settings
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          if [ -z "${MAVEN_CENTRAL_USERNAME}" ] || [ -z "${MAVEN_CENTRAL_PASSWORD}" ]; then
+            echo "::warning::MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD are not set — skipping the upload."
+            exit 0
+          fi
+
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<XML
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${MAVEN_CENTRAL_USERNAME}</username>
+                <password>${MAVEN_CENTRAL_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          XML
+
+      - name: Import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "${GPG_PRIVATE_KEY}" ]; then
+            echo "::warning::GPG_PRIVATE_KEY is not set — the artifacts cannot be signed."
+            exit 0
+          fi
+
+          printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+
+      - name: Publish
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "${MAVEN_CENTRAL_USERNAME}" ] || [ -z "${MAVEN_CENTRAL_PASSWORD}" ] || [ -z "${GPG_PRIVATE_KEY}" ]; then
+            echo "::warning::the release secrets are incomplete — running the tests only."
+            mvn -B --no-transfer-progress test
+            exit 0
+          fi
+
+          mvn -B --no-transfer-progress -Prelease \
+            -Dgpg.passphrase="${GPG_PASSPHRASE}" \
+            deploy
+
+      - name: Create the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

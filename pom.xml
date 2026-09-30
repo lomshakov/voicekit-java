@@ -44,13 +44,11 @@
     <url>https://github.com/lomshakov/voicekit-java/issues</url>
   </issueManagement>
 
-  <distributionManagement>
-    <repository>
-      <id>central</id>
-      <name>Central Portal</name>
-      <url>https://central.sonatype.com/api/v1/publisher/upload</url>
-    </repository>
-  </distributionManagement>
+  <!--
+    There is deliberately no <distributionManagement> here: the Central Portal
+    plugin uploads a bundle to https://central.sonatype.com instead of PUT-ing
+    artifacts into a Maven repository.
+  -->
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

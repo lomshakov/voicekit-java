@@ -30,7 +30,7 @@ import java.util.Map;
 public final class VoiceKitClient {
 
     /** The SDK release version (also sent as part of the {@code User-Agent}). */
-    public static final String VERSION = "0.4.0";
+    public static final String VERSION = "0.5.0";
 
     /** The public VoiceKit endpoint. */
     public static final String DEFAULT_BASE_URL = "https://ttsapi.ru";
@@ -1233,6 +1233,349 @@ public final class VoiceKitClient {
      * @param method the HTTP method
      * @param path the path (a query string may be included)
      */
+    // ──────────────────────── Meetings ─────────────────────────────────
+
+    /**
+     * Automatically captured meetings (Zoom, Meet, calendar), newest first.
+     *
+     * @param limit the page size; {@code <= 0} means 50
+     */
+    public Result meetingEvents(int limit) {
+        return sendJson("GET", "/v1/meetings/events", limitQuery(limit), null);
+    }
+
+    /**
+     * One captured meeting: status, job, recording and protocol ids.
+     *
+     * @param eventId the meeting id
+     */
+    public Result meetingEvent(String eventId) {
+        return get("/v1/meetings/events/" + encode(eventId));
+    }
+
+    /**
+     * Points a captured meeting at a CRM deal so its protocol lands there.
+     *
+     * @param eventId the meeting id
+     * @param dealId the CRM deal id, or {@code null}
+     * @param phone the contact phone, or {@code null}
+     * @param email the contact email, or {@code null}
+     */
+    public Result setMeetingTarget(String eventId, String dealId, String phone, String email) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        putIfPresent(body, "deal_id", dealId);
+        putIfPresent(body, "phone", phone);
+        putIfPresent(body, "email", email);
+
+        return put("/v1/meetings/events/" + encode(eventId) + "/target", body);
+    }
+
+    /**
+     * Retries a failed capture now.
+     *
+     * @param eventId the meeting id
+     */
+    public Result retryMeeting(String eventId) {
+        return post("/v1/meetings/events/" + encode(eventId) + "/retry", new LinkedHashMap<>());
+    }
+
+    /**
+     * Provider calendar events pulled from the connected account.
+     *
+     * @param limit the page size; {@code <= 0} means 50
+     */
+    public Result meetingCalendar(int limit) {
+        return sendJson("GET", "/v1/meetings/calendar", limitQuery(limit), null);
+    }
+
+    /** Pulls the provider calendar now instead of waiting for the scheduler. */
+    public Result syncMeetingCalendar() {
+        return post("/v1/meetings/calendar/sync", new LinkedHashMap<>());
+    }
+
+    /**
+     * Writes the protocol link back to the provider event.
+     *
+     * @param eventId the meeting id
+     */
+    public Result writebackMeetingCalendar(String eventId) {
+        return post("/v1/meetings/events/" + encode(eventId) + "/calendar", new LinkedHashMap<>());
+    }
+
+    /**
+     * Persisted meeting protocols, newest first.
+     *
+     * @param limit the page size; {@code <= 0} means 50
+     */
+    public Result protocols(int limit) {
+        return sendJson("GET", "/v1/meetings/protocols", limitQuery(limit), null);
+    }
+
+    /**
+     * One persisted protocol.
+     *
+     * @param protocolId the protocol id
+     */
+    public Result protocol(String protocolId) {
+        return get("/v1/meetings/protocols/" + encode(protocolId));
+    }
+
+    /**
+     * Approves a draft protocol; only approved ones may be pushed to CRM.
+     *
+     * @param protocolId the protocol id
+     */
+    public Result approveProtocol(String protocolId) {
+        return post("/v1/meetings/protocols/" + encode(protocolId) + "/approve", new LinkedHashMap<>());
+    }
+
+    /**
+     * Replaces the protocol Markdown.
+     *
+     * @param protocolId the protocol id
+     * @param markdown the new Markdown
+     */
+    public Result updateProtocol(String protocolId, String markdown) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("markdown", markdown);
+
+        return put("/v1/meetings/protocols/" + encode(protocolId), body);
+    }
+
+    /**
+     * Downloads a protocol as {@code md}, {@code pdf} or {@code docx}.
+     *
+     * @param protocolId the protocol id
+     * @param format the format, or {@code null} for Markdown
+     */
+    public byte[] exportProtocol(String protocolId, String format) {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("format", format == null || format.isBlank() ? "md" : format);
+
+        return download("/v1/meetings/protocols/" + encode(protocolId) + "/export", query);
+    }
+
+    /**
+     * Builds a protocol against an inline schema or a saved template.
+     *
+     * @param recordingId the recording id
+     * @param templateId the saved template id, or {@code null}
+     * @param schema the inline section schema, or {@code null}
+     * @param webhookUrl the webhook for the {@code meeting.completed} event, or {@code null}
+     */
+    public Result customProtocol(
+            String recordingId,
+            String templateId,
+            Map<String, Object> schema,
+            String webhookUrl) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("recording_id", recordingId);
+        putIfPresent(body, "template_id", templateId);
+        putIfPresent(body, "webhook_url", webhookUrl);
+        if (schema != null) {
+            body.put("schema", schema);
+        }
+
+        return post("/v1/meetings/protocol/custom", body);
+    }
+
+    /** Saved protocol templates. */
+    public Result protocolTemplates() {
+        return get("/v1/meetings/templates");
+    }
+
+    /**
+     * Saves a protocol template.
+     *
+     * @param name the template name
+     * @param schema the template definition, or {@code null}
+     */
+    public Result createProtocolTemplate(String name, Map<String, Object> schema) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        if (schema != null) {
+            body.put("schema", schema);
+        }
+
+        return post("/v1/meetings/templates", body);
+    }
+
+    /**
+     * Renames or reshapes a saved template.
+     *
+     * @param templateId the template id
+     * @param name the new name
+     * @param schema the new definition, or {@code null}
+     */
+    public Result updateProtocolTemplate(String templateId, String name, Map<String, Object> schema) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        if (schema != null) {
+            body.put("schema", schema);
+        }
+
+        return put("/v1/meetings/templates/" + encode(templateId), body);
+    }
+
+    /**
+     * Removes a saved template.
+     *
+     * @param templateId the template id
+     */
+    public void deleteProtocolTemplate(String templateId) {
+        delete("/v1/meetings/templates/" + encode(templateId));
+    }
+
+    // ──────────────────────── Webhooks ─────────────────────────────────
+
+    /** The signing secret behind {@code X-VoiceKit-Signature}; created on first call. */
+    public Result webhookSecret() {
+        return get("/v1/webhooks/secret");
+    }
+
+    /** Issues a new signing secret; the previous one stops verifying at once. */
+    public Result rotateWebhookSecret() {
+        return post("/v1/webhooks/secret/rotate", new LinkedHashMap<>());
+    }
+
+    // ──────────────────────── Integrations ─────────────────────────────
+
+    /** External connections (Bitrix24, amoCRM, 1С), active and revoked. */
+    public Result integrations() {
+        return get("/v1/integrations/connections");
+    }
+
+    /**
+     * Stores a provider credential (incoming-webhook URL or OAuth token).
+     *
+     * @param provider {@code bitrix24}, {@code amocrm} or {@code s1}
+     * @param secret the credential; never echoed back
+     * @param displayName the cabinet label, or {@code null}
+     * @param baseUrl the tenant root URL, or {@code null}
+     * @param refreshToken the OAuth refresh token, or {@code null}
+     * @param scopes the granted scopes, or {@code null}
+     */
+    public Result connectIntegration(
+            String provider,
+            String secret,
+            String displayName,
+            String baseUrl,
+            String refreshToken,
+            String scopes) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("provider", provider);
+        body.put("secret", secret);
+        putIfPresent(body, "display_name", displayName);
+        putIfPresent(body, "base_url", baseUrl);
+        putIfPresent(body, "refresh_token", refreshToken);
+        putIfPresent(body, "scopes", scopes);
+
+        return post("/v1/integrations/connections", body);
+    }
+
+    /**
+     * Revokes a connection.
+     *
+     * @param connectionId the connection id
+     */
+    public void deleteIntegration(String connectionId) {
+        delete("/v1/integrations/connections/" + encode(connectionId));
+    }
+
+    /**
+     * Starts the OAuth handshake; meeting providers require consent.
+     *
+     * @param provider the provider id
+     * @param consent whether the caller confirms the provider consent screen
+     */
+    public Result integrationAuthorizeUrl(String provider, boolean consent) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("consent", consent);
+
+        return post("/v1/integrations/" + encode(provider) + "/authorize", body);
+    }
+
+    // ──────────────────────── CRM push ─────────────────────────────────
+
+    /**
+     * Pushes a recording artifact to a CRM deal.
+     *
+     * @param recordingId the recording id
+     * @param provider the CRM provider id
+     * @param kind {@code protocol}, {@code transcript} or {@code qa}; {@code null} means protocol
+     * @param dealId the deal id, or {@code null}
+     * @param phone the contact phone, or {@code null}
+     * @param email the contact email, or {@code null}
+     * @param sourceUrl the source link, or {@code null}
+     */
+    public Result pushRecording(
+            String recordingId,
+            String provider,
+            String kind,
+            String dealId,
+            String phone,
+            String email,
+            String sourceUrl) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("provider", provider);
+        body.put("kind", kind == null || kind.isBlank() ? "protocol" : kind);
+        putIfPresent(body, "deal_id", dealId);
+        putIfPresent(body, "phone", phone);
+        putIfPresent(body, "email", email);
+        putIfPresent(body, "source_url", sourceUrl);
+
+        return post("/v1/recordings/" + encode(recordingId) + "/push", body);
+    }
+
+    /**
+     * Push history for a recording, newest first.
+     *
+     * @param recordingId the recording id
+     */
+    public Result recordingPushes(String recordingId) {
+        return get("/v1/recordings/" + encode(recordingId) + "/pushes");
+    }
+
+    /**
+     * Retries a failed push, reusing the target stored with it.
+     *
+     * @param recordingId the recording id
+     * @param provider the CRM provider id
+     * @param kind the artifact kind
+     */
+    public Result retryRecordingPush(String recordingId, String provider, String kind) {
+        String path = "/v1/recordings/" + encode(recordingId)
+                + "/pushes/" + encode(provider) + "/" + encode(kind) + "/retry";
+
+        return post(path, new LinkedHashMap<>());
+    }
+
+    // ──────────────────────── Billing ──────────────────────────────────
+
+    /**
+     * Creates a card top-up payment and returns the payment link.
+     *
+     * @param amountRub the amount in roubles
+     */
+    public Result topUp(double amountRub) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("amount_rub", amountRub);
+
+        return post("/v1/billing/topup", body);
+    }
+
+    private static Map<String, Object> limitQuery(int limit) {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("limit", limit <= 0 ? 50 : limit);
+        return query;
+    }
+
+    private static void putIfPresent(Map<String, Object> body, String key, String value) {
+        if (value != null) {
+            body.put(key, value);
+        }
+    }
+
     public Result request(String method, String path) {
         return sendJson(method, path, null, null);
     }
@@ -1288,6 +1631,17 @@ public final class VoiceKitClient {
      */
     public Result delete(String path) {
         return sendJson("DELETE", path, null, null);
+    }
+
+    /**
+     * Calls {@code PUT} with a JSON body and decodes the JSON object it
+     * returns.
+     *
+     * @param path the path
+     * @param body the request body
+     */
+    public Result put(String path, Map<String, Object> body) {
+        return sendJson("PUT", path, null, body);
     }
 
     /**

@@ -23,14 +23,14 @@ streaming sessions use the built-in WebSocket implementation. Requires
 <dependency>
   <groupId>io.github.lomshakov</groupId>
   <artifactId>voicekit-client</artifactId>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```kotlin
-implementation("io.github.lomshakov:voicekit-client:0.4.0")
+implementation("io.github.lomshakov:voicekit-client:0.5.0")
 ```
 
 ## Quick start
